@@ -22,12 +22,21 @@ final class Log: ObservableObject {
     private let lock = NSLock()
     private var scheduled = false
     private var watchers = 0
+    private var lastLine = Date()
+
+    /// When the core last logged anything (to tell a slow boot from a stuck one).
+    var lastLineAt: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastLine
+    }
     @Published private(set) var lines: [Line] = []
 
     /// Called from any thread (the core's).
     func append(level: Int32, _ text: String) {
         lock.lock()
         let line = Line(id: next, level: level, text: text)
+        lastLine = Date()
         if ring.count < Self.capacity { ring.append(line) } else { ring[next % Self.capacity] = line }
         next += 1
         let publish = watchers > 0 && !scheduled

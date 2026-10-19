@@ -140,6 +140,9 @@ final class EmulationController: ObservableObject {
     }
 
     @Published var stage: Stage = .attaching
+    /// When the boot started, and when its progress last changed (to tell slow from stuck).
+    let bootStarted = Date()
+    @Published private(set) var lastProgress = Date()
     @Published var controllerConnected = !GCController.controllers().isEmpty
 
     let input = InputLoop()
@@ -203,6 +206,7 @@ final class EmulationController: ObservableObject {
 
     private func set(_ next: Stage) {
         guard next != stage else { return }
+        lastProgress = Date()
         let was = stage
         stage = next
         if next == .paused { input.suspend() }
@@ -266,6 +270,12 @@ final class EmulationController: ObservableObject {
         Core.run({ try Core.stop() }) { _ in self.close() }
     }
 
+    /// Stops, then runs `next` instead of going back to the library.
+    func stopThen(_ next: @escaping () -> Void) {
+        finished = next
+        stop()
+    }
+
     private func close() {
         timer?.invalidate()
         timer = nil
@@ -283,6 +293,8 @@ final class EmulationController: ObservableObject {
 struct EmulationView: View {
     let session: AppModel.Session
     let close: () -> Void
+    /// Stops the session and starts it again with RPCS3's precompilation off.
+    var retryWithoutPrecompilation: (() -> Void)?
     @StateObject private var controller = EmulationController()
     @AppStorage("rpcs3.hud") private var showHUD = true
     @AppStorage("rpcs3.touchpad") private var touchMode = 0 // 0 auto, 1 always, 2 never
@@ -364,20 +376,8 @@ struct EmulationView: View {
         case .attaching:
             ProgressView().tint(.white)
         case let .booting(stage, fraction):
-            VStack(spacing: 14) {
-                Text("Chargement").font(.title2.bold())
-                if let fraction {
-                    ProgressView(value: fraction).frame(width: 320)
-                } else {
-                    ProgressView().tint(.white)
-                }
-                Text(stage).font(.callout).foregroundColor(.white.opacity(0.75)).multilineTextAlignment(.center)
-                Text("La première fois, RPCS3 compile le jeu (PPU, SPU, shaders) : cela peut prendre plusieurs minutes.")
-                    .font(.footnote).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center).frame(maxWidth: 420)
-            }
-            .foregroundColor(.white)
-            .padding(28)
-            .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.6)))
+            BootOverlay(stage: stage, fraction: fraction, controller: controller,
+                        retry: retryWithoutPrecompilation.map { retry in { controller.stopThen(retry) } })
         case .paused:
             VStack(spacing: 16) {
                 Image(systemName: "pause.circle.fill").font(.system(size: 64))
@@ -425,5 +425,77 @@ private struct HUDView: View {
         }
         .padding(.leading, 18).padding(.top, 10)
         .allowsHitTesting(false)
+    }
+}
+
+/// The loading screen: progress, how long it has run, the core's latest log lines (so slow and
+/// stuck can be told apart), and, when nothing has moved for two minutes, a way out.
+private struct BootOverlay: View {
+    let stage: String
+    let fraction: Double?
+    @ObservedObject var controller: EmulationController
+    let retry: (() -> Void)?
+    @ObservedObject private var log = Log.shared
+    @State private var sharing: URL?
+
+    /// Two minutes without progress or log lines (RPCS3_STALL_SECONDS shortens it for tests).
+    private static let stallDelay = ProcessInfo.processInfo.environment["RPCS3_STALL_SECONDS"].flatMap(Double.init) ?? 120
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let elapsed = Int(timeline.date.timeIntervalSince(controller.bootStarted))
+            let stalled = timeline.date.timeIntervalSince(max(controller.lastProgress, Log.shared.lastLineAt)) > Self.stallDelay
+            VStack(spacing: 14) {
+                Text("Chargement").font(.title2.bold())
+                if let fraction {
+                    ProgressView(value: fraction).frame(width: 340)
+                } else {
+                    ProgressView().tint(.white)
+                }
+                Text(stage).font(.callout).foregroundColor(.white.opacity(0.8)).multilineTextAlignment(.center)
+                Text(String(format: "%d:%02d", elapsed / 60, elapsed % 60))
+                    .font(.system(.footnote, design: .monospaced)).foregroundColor(.white.opacity(0.6))
+
+                // The last lines the core logged: if they keep changing, it is working.
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(log.lines.suffix(4)) { line in
+                        Text(line.text).lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.white.opacity(0.55))
+                .frame(width: 460, alignment: .leading)
+
+                if stalled {
+                    Text("Ni la progression ni le journal n'ont bougé depuis 2 minutes : RPCS3 est sans doute bloqué.")
+                        .font(.footnote).foregroundColor(.yellow).multilineTextAlignment(.center).frame(maxWidth: 460)
+                    if let retry {
+                        Button("Redémarrer sans précompilation") { retry() }
+                            .buttonStyle(.borderedProminent)
+                        Text("RPCS3 compilera le code SPU au fil du jeu au lieu de construire tout le cache d'abord. Votre réglage est rétabli à la fermeture.")
+                            .font(.caption2).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center).frame(maxWidth: 420)
+                    }
+                } else {
+                    Text("La première fois, RPCS3 compile le jeu (PPU, SPU, shaders) : cela peut prendre plusieurs minutes.")
+                        .font(.footnote).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center).frame(maxWidth: 420)
+                }
+                HStack(spacing: 12) {
+                    Button {
+                        let url = Core.cache.appendingPathComponent("RPCS3-journal.txt")
+                        try? Log.shared.text.write(to: url, atomically: true, encoding: .utf8)
+                        sharing = url
+                    } label: { Label("Partager le journal", systemImage: "square.and.arrow.up") }
+                    Button(role: .destructive) { controller.stop() } label: { Label("Arrêter", systemImage: "stop.fill") }
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+            }
+            .foregroundColor(.white)
+            .padding(28)
+            .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.65)))
+        }
+        .onAppear { log.watch() }
+        .onDisappear { log.unwatch() }
+        .sheet(item: $sharing) { ShareSheet(items: [$0]) }
     }
 }

@@ -30,6 +30,7 @@ Numérotation propre, « RPCS3 iOS 16 », en parallèle des releases officielles
 
 | RPCS3 iOS 16 | Basé sur RPCS3 iOS (XITRIX) | Release | Contenu |
 |---|---|---|---|
+| 1.2 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.2](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.2) | Tuile « PlayStation 3 — XMB » dans la liste des jeux ; écran de chargement avec chrono et journal en direct ; « Redémarrer sans précompilation » si rien ne bouge pendant 2 minutes |
 | 1.1 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.1](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.1) | Accueil façon XMB de la PS3, fond animé selon le mois et l'heure, indicateurs JIT / mémoire accrue / adressage étendu, navigation à la manette |
 | 1.0 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16) | Cœur recompilé pour iOS 16, interface SwiftUI en français, optimisé batterie, son corrigé |
 
@@ -41,6 +42,8 @@ L'écran d'accueil reprend le **XMB de la PS3** :
 - **Catégories :** Paramètres, Jeu et Réseau en ligne, les éléments de la catégorie en colonne, ceux d'avant la sélection au-dessus de la barre.
 - **Fond :** le thème « Original », un dégradé à la couleur du mois et à la luminosité de l'heure, avec des vagues animées. Elles tournent à 20 images par seconde, rendues par la puce graphique, et se mettent en pause pendant un jeu ou en arrière-plan. Paramètres › Thème permet de les figer.
 - **En haut à droite :** la date et l'heure, et les indicateurs **JIT**, **mémoire accrue** (`increased-memory-limit`) et **adressage étendu** (`extended-virtual-addressing`), en vert quand ils sont accordés, avec la mémoire encore disponible.
+- **Le vrai XMB** du firmware est la première tuile de Jeu, « PlayStation 3 — XMB », comme un jeu.
+- **Chargement :** l'écran affiche le temps écoulé et les dernières lignes du journal en direct, ce qui permet de voir si RPCS3 travaille encore. Si ni la progression ni le journal ne bougent pendant 2 minutes, le bouton « Redémarrer sans précompilation » relance sans construire tout le cache PPU/SPU d'abord : RPCS3 compile alors au fil du jeu. Le réglage d'origine est rétabli en quittant.
 - **Manette :** la croix directionnelle ou le stick se déplacent dans la barre, ✕ ouvre, △ affiche les options d'un jeu. Au doigt, on glisse ou on touche, et toucher l'élément sélectionné l'ouvre.
 
 ## Installer

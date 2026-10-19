@@ -143,6 +143,8 @@ struct XMBItem: Identifiable {
     enum Icon {
         case symbol(String)
         case game(String)
+        /// The PS3's own menu, drawn as a game tile.
+        case system
     }
 
     let id: String
@@ -196,16 +198,16 @@ struct XMBView: View {
             gameItems.append(XMBItem(id: "firmware", title: "Installer le firmware PS3", subtitle: "PS3UPDAT.PUP, à télécharger sur le site de PlayStation",
                                      icon: .symbol("exclamationmark.triangle.fill"), action: { importing = true }))
         }
+        // The console's own menu, first in the list like a game.
+        gameItems.append(XMBItem(id: "vsh", title: "PlayStation 3 — XMB",
+                                 subtitle: app.firmware.isEmpty ? "Installez d'abord le firmware PS3" : "Le vrai menu de la console, firmware \(app.firmware)",
+                                 icon: .system, action: { if app.firmware.isEmpty { importing = true } else { app.session = .xmb } }))
         gameItems += games.map { game in
             XMBItem(id: "game-\(game.titleID)", title: game.title, subtitle: "\(game.titleID) · v\(game.version)",
                     icon: .game(game.iconPath), game: game, action: { app.play(game) })
         }
         gameItems.append(XMBItem(id: "install", title: "Installer des fichiers…", subtitle: "Firmware, PKG, RAP, ISO + clé, ZIP, dossier de jeu",
                                  icon: .symbol("square.and.arrow.down.fill"), action: { importing = true }))
-        if !app.firmware.isEmpty {
-            gameItems.append(XMBItem(id: "vsh", title: "Menu de la PS3", subtitle: "Le vrai XMB du firmware \(app.firmware)",
-                                     icon: .symbol("square.grid.3x3.fill"), action: { app.session = .xmb }))
-        }
         gameItems.append(XMBItem(id: "bigpicture", title: "Mode Big Picture", subtitle: "La bibliothèque de RPCS3, à la manette",
                                  icon: .symbol("tv.fill"), action: { app.session = .bigPicture }))
 
@@ -405,6 +407,9 @@ private struct XMBRow: View {
                 case let .game(path):
                     GameIcon(path: path, size: selected ? 62 : 46)
                         .shadow(color: .white.opacity(selected ? 0.45 : 0), radius: 12)
+                case .system:
+                    XMBTile(size: selected ? 62 : 46)
+                        .shadow(color: .white.opacity(selected ? 0.45 : 0), radius: 12)
                 case let .symbol(name):
                     Image(systemName: name)
                         .font(.system(size: selected ? 34 : 26))
@@ -441,6 +446,31 @@ private struct XMBRow: View {
         }
         .frame(width: 520, alignment: .leading)
         .animation(.easeOut(duration: 0.18), value: selected)
+    }
+}
+
+/// The tile of the console's own menu, at the size of a game's ICON0 (320 × 176).
+private struct XMBTile: View {
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(white: 0.30), Color(white: 0.06)], startPoint: .top, endPoint: .bottom)
+            Path { p in
+                let w = size * 320 / 176
+                p.move(to: CGPoint(x: 0, y: size * 0.70))
+                p.addCurve(to: CGPoint(x: w, y: size * 0.55), control1: CGPoint(x: w * 0.35, y: size * 0.45), control2: CGPoint(x: w * 0.65, y: size * 0.85))
+            }
+            .stroke(Color.white.opacity(0.35), lineWidth: 1)
+            VStack(spacing: size * 0.02) {
+                Text("PS3").font(.system(size: size * 0.30, weight: .heavy, design: .rounded)).italic()
+                Text("XMB").font(.system(size: size * 0.16, weight: .semibold, design: .rounded)).opacity(0.8)
+            }
+            .foregroundColor(.white)
+        }
+        .frame(width: size * 320 / 176, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.12))
+        .overlay(RoundedRectangle(cornerRadius: size * 0.12).strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
     }
 }
 

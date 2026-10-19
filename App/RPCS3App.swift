@@ -51,11 +51,15 @@ struct RootView: View {
             }
         }
         .onAppear { app.start() }
-        .fullScreenCover(item: $app.session) { session in
-            EmulationView(session: session) {
+        .fullScreenCover(item: $app.session, onDismiss: { app.gameScreenDismissed() }) { session in
+            EmulationView(session: session, close: {
                 app.session = nil
                 app.reload()
-            }
+                app.restorePrecompilationIfNeeded()
+            }, retryWithoutPrecompilation: {
+                app.session = nil
+                app.retryWithoutPrecompilation(session)
+            })
         }
         .overlay { if let task = app.task { WorkOverlay(work: task) } }
         .alert("RPCS3", isPresented: Binding(get: { app.message != nil }, set: { if !$0 { app.message = nil } })) {

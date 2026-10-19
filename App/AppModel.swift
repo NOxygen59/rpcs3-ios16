@@ -40,7 +40,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var firmware = ""
     @Published var task: Work?
     @Published var message: String?
-    @Published var session: Session?
+    @Published var session: Session? {
+        didSet { if session != nil { coverShown = true } }
+    }
+    /// A session to start once the game screen has really gone away (iOS reuses a screen that
+    /// is still closing when the same session comes back too soon).
+    private var pendingSession: Session?
+    private var coverShown = false
     @Published private(set) var jitless = false
 
     init() {}
@@ -88,6 +94,7 @@ final class AppModel: ObservableObject {
             case .success:
                 self.phase = .ready
                 self.reload()
+                self.restorePrecompilationIfNeeded()
                 Task { try? await Online.refreshConfigDatabase() }
             case let .failure(error):
                 if (error as? CoreError)?.code == RPCS3_IOS_JIT_UNAVAILABLE {
@@ -169,6 +176,55 @@ final class AppModel: ObservableObject {
             return
         }
         session = .game(game, savestate: savestate)
+    }
+
+    // MARK: Starting without precompilation
+
+    /// The key of RPCS3's "PPU/SPU LLVM Precompilation" setting, and where its previous value
+    /// is kept while a session runs without it (restored when it ends, or at the next launch).
+    private static let precompilationKey = "advanced.llvm_precompilation"
+    private static let restoreKey = "rpcs3.restorePrecompilation"
+
+    /// Stops nothing itself: called once the stalled session has closed. Turns precompilation
+    /// off, then starts the same session again; RPCS3 then compiles SPU code as it runs instead
+    /// of building the whole cache first.
+    func retryWithoutPrecompilation(_ session: Session) {
+        Core.run({ () -> String in
+            let current = (try? Core.settings())?.first { $0.key == Self.precompilationKey }?.value ?? "true"
+            try Core.setSetting(Self.precompilationKey, "false")
+            return current
+        }) { result in
+            switch result {
+            case let .success(previous):
+                if UserDefaults.standard.string(forKey: Self.restoreKey) == nil {
+                    UserDefaults.standard.set(previous, forKey: Self.restoreKey)
+                }
+                self.pendingSession = session
+                self.launchPending()
+            case let .failure(error):
+                self.message = error.localizedDescription
+            }
+        }
+    }
+
+    /// The game screen has finished closing.
+    func gameScreenDismissed() {
+        coverShown = false
+        launchPending()
+    }
+
+    private func launchPending() {
+        guard let next = pendingSession, session == nil, !coverShown else { return }
+        pendingSession = nil
+        session = next
+    }
+
+    /// Puts the precompilation setting back as it was, if a session changed it.
+    func restorePrecompilationIfNeeded() {
+        guard let previous = UserDefaults.standard.string(forKey: Self.restoreKey) else { return }
+        Core.run({ try Core.setSetting(Self.precompilationKey, previous) }) { result in
+            if case .success = result { UserDefaults.standard.removeObject(forKey: Self.restoreKey) }
+        }
     }
 
     func delete(_ game: Game) {
