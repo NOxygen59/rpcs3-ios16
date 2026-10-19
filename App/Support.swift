@@ -2,6 +2,7 @@
 // statuses, byte counts.
 
 import Foundation
+import os
 import UIKit
 
 /// The core's log: the last lines in a ring buffer. RPCS3 logs a lot while a game runs, so lines
@@ -123,5 +124,28 @@ enum Strings {
 extension UIApplication {
     var keyWindowRoot: UIViewController? {
         connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.rootViewController
+    }
+}
+
+/// What the system grants the app, shown in the XMB's top right: JIT, the increased memory
+/// limit and extended virtual addressing (entitlements TrollStore signs in), and how much memory
+/// iOS still lets the app use.
+enum SystemStatus {
+    static let increasedMemoryLimit = hasEntitlement("com.apple.developer.kernel.increased-memory-limit")
+    static let extendedVirtualAddressing = hasEntitlement("com.apple.developer.kernel.extended-virtual-addressing")
+
+    /// Bytes the app can still allocate before iOS ends it (os_proc_available_memory).
+    static var availableMemory: UInt64 { UInt64(os_proc_available_memory()) }
+
+    /// Reads this process's own signature (SecTask, exported by Security but not in the iOS SDK).
+    private static func hasEntitlement(_ name: String) -> Bool {
+        typealias Create = @convention(c) (CFAllocator?) -> Unmanaged<AnyObject>?
+        typealias Copy = @convention(c) (AnyObject, CFString, UnsafeMutableRawPointer?) -> Unmanaged<AnyObject>?
+        let handle = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
+        guard let create = dlsym(handle, "SecTaskCreateFromSelf"), let copy = dlsym(handle, "SecTaskCopyValueForEntitlement"),
+              let task = unsafeBitCast(create, to: Create.self)(nil)?.takeRetainedValue(),
+              let value = unsafeBitCast(copy, to: Copy.self)(task, name as CFString, nil)?.takeRetainedValue()
+        else { return false }
+        return (value as? NSNumber)?.boolValue ?? false
     }
 }
