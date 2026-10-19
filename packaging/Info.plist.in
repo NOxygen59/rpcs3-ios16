@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>fr</string>
+  <key>CFBundleAllowMixedLocalizations</key><true/>
+  <key>CFBundleDisplayName</key><string>RPCS3</string>
+  <key>CFBundleName</key><string>RPCS3</string>
+  <key>CFBundleExecutable</key><string>RPCS3</string>
+  <key>CFBundleIdentifier</key><string>com.xitrix.RPCS3</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+  <key>CFBundleVersion</key><string>@VERSION@</string>
+  <key>CFBundleSupportedPlatforms</key><array><string>@PLATFORM@</string></array>
+  <key>MinimumOSVersion</key><string>16.0</string>
+  <key>LSRequiresIPhoneOS</key><true/>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSSupportsGameMode</key><true/>
+  <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+  <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+  <key>UILaunchScreen</key><dict/>
+  <key>UIApplicationSupportsIndirectInputEvents</key><true/>
+  <key>UIRequiresFullScreen</key><false/>
+  <key>UIApplicationSceneManifest</key>
+  <dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+  <key>UISupportedInterfaceOrientations</key>
+  <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationPortrait</string></array>
+  <key>UISupportedInterfaceOrientations~ipad</key>
+  <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string></array>
+  <!-- ProMotion: up to 120 Hz. -->
+  <key>CADisableMinimumFrameDurationOnPhone</key><true/>
+  <key>UIBackgroundModes</key><array><string>audio</string></array>
+  <!-- Fichiers › Sur mon iPad › RPCS3, to drop games and firmware. -->
+  <key>UIFileSharingEnabled</key><true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+  <key>GCSupportsControllerUserInteraction</key><true/>
+  <key>GCSupportedGameControllers</key>
+  <array><dict><key>ProfileName</key><string>ExtendedGamepad</string></dict></array>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>RPCS3 utilise le réseau local pour le multijoueur RPCN et les serveurs RPCN personnalisés.</string>
+  <key>CFBundleURLTypes</key>
+  <array><dict><key>CFBundleURLName</key><string>RPCS3</string><key>CFBundleURLSchemes</key><array><string>rpcs3</string></array></dict></array>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Fichiers PlayStation 3</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array><string>net.rpcs3.pup</string><string>net.rpcs3.rap</string><string>net.rpcs3.pkg</string><string>com.apple.installer-package-archive</string><string>public.iso-image</string><string>public.zip-archive</string></array>
+    </dict>
+  </array>
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict><key>UTTypeIdentifier</key><string>net.rpcs3.pup</string><key>UTTypeDescription</key><string>Firmware PS3</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>pup</string><string>PUP</string></array></dict></dict>
+    <dict><key>UTTypeIdentifier</key><string>net.rpcs3.rap</string><key>UTTypeDescription</key><string>Licence PS3</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>rap</string><string>RAP</string></array></dict></dict>
+    <dict><key>UTTypeIdentifier</key><string>net.rpcs3.pkg</string><key>UTTypeDescription</key><string>Paquet PS3</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>pkg</string><string>PKG</string></array></dict></dict>
+  </array>
+  <key>CFBundleIcons</key>
+  <dict><key>CFBundlePrimaryIcon</key><dict>
+    <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array>
+    <key>CFBundleIconName</key><string>AppIcon</string>
+  </dict></dict>
+  <key>CFBundleIcons~ipad</key>
+  <dict><key>CFBundlePrimaryIcon</key><dict>
+    <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon76x76</string><string>AppIcon83.5x83.5</string></array>
+    <key>CFBundleIconName</key><string>AppIcon</string>
+  </dict></dict>
+</dict>
+</plist>

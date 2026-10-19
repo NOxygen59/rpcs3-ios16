@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>application-identifier</key><string>com.xitrix.RPCS3</string>
+  <!-- TrollStore's "Open with JIT" attaches a debugger, which needs this. -->
+  <key>get-task-allow</key><true/>
+  <!-- The PS3's memory map and the JIT arenas need more than the default limits. -->
+  <key>com.apple.developer.kernel.increased-memory-limit</key><true/>
+  <key>com.apple.developer.kernel.extended-virtual-addressing</key><true/>
+  <key>keychain-access-groups</key><array><string>com.xitrix.RPCS3</string></array>
+</dict>
+</plist>
