@@ -24,6 +24,14 @@ L'émulateur PlayStation 3 [RPCS3](https://github.com/RPCS3/rpcs3), dans le port
   - RPCN ;
   - journal.
 
+## Versions
+
+Numérotation propre, « RPCS3 iOS 16 », en parallèle des releases officielles de XITRIX :
+
+| RPCS3 iOS 16 | Basé sur RPCS3 iOS (XITRIX) | Release | Contenu |
+|---|---|---|---|
+| 1.0 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16) | Cœur recompilé pour iOS 16, interface SwiftUI en français, optimisé batterie, son corrigé |
+
 ## Installer
 
 Prendre le `.tipa` dans les [Releases](https://github.com/NOxygen59/rpcs3-ios16/releases), l'installer avec TrollStore, puis lancer RPCS3 par un appui long › **Open with JIT**.
