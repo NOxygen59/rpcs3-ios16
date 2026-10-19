@@ -65,6 +65,22 @@ final class InputLoop {
     private var touchConnected = false
     private var touchPort: UInt32 = 0
 
+    /// While the in-game menu is open, controllers drive it (the game gets a neutral pad).
+    var menu: ((PadNavigator.Input) -> Void)? {
+        didSet {
+            navigator.reset()
+            navigator.handler = menu
+            if menu != nil { neutralizeControllers() } else { pushAllControllers() }
+        }
+    }
+    /// Select + Start pressed together: open the in-game menu.
+    var onMenuCombo: (() -> Void)?
+    /// A controller was used (so the on-screen pad can hide itself).
+    var onControllerUsed: (() -> Void)?
+    private let navigator = PadNavigator()
+    private var comboHeld = false
+    private var reportedUse = false
+
     /// Whether the on-screen pad is shown; it then takes the first port after the controllers.
     var touchEnabled = true { didSet { if touchEnabled != oldValue { assign() } } }
 
@@ -113,12 +129,13 @@ final class InputLoop {
     /// when there is none.
     private func assign() {
         guard running else { return }
+        reportedUse = false
         for c in ports { c.extendedGamepad?.valueChangedHandler = nil }
         ports = Array(GCController.controllers().filter { $0.extendedGamepad != nil }.prefix(7))
         for (index, controller) in ports.enumerated() {
             let port = UInt32(index)
             guard let pad = controller.extendedGamepad else { continue }
-            pad.valueChangedHandler = { pad, _ in Core.setPad(port, Self.state(pad)) }
+            pad.valueChangedHandler = { [weak self] pad, _ in self?.changed(pad, port: port) }
             Core.setPad(port, Self.state(pad))
         }
         var used = ports.count
@@ -134,6 +151,51 @@ final class InputLoop {
         let live = Set(ports.map(ObjectIdentifier.init))
         for key in rumble.keys where !live.contains(key) { rumble.removeValue(forKey: key)?.stop() }
         updateRumbleTimer()
+    }
+
+    private func changed(_ pad: GCExtendedGamepad, port: UInt32) {
+        if !reportedUse {
+            reportedUse = true
+            let used = onControllerUsed
+            DispatchQueue.main.async { used?() }
+        }
+        if menu != nil {
+            navigator.feed(pad)
+            return
+        }
+        let combo = (pad.buttonOptions?.isPressed ?? false) && pad.buttonMenu.isPressed
+        if combo {
+            if !comboHeld {
+                comboHeld = true
+                Core.setPad(port, Self.neutral)
+                let open = onMenuCombo
+                DispatchQueue.main.async { open?() }
+            }
+            return
+        }
+        if comboHeld {
+            // Wait until both buttons are up before the game sees this pad again.
+            if (pad.buttonOptions?.isPressed ?? false) || pad.buttonMenu.isPressed { return }
+            comboHeld = false
+        }
+        Core.setPad(port, Self.state(pad))
+    }
+
+    private static var neutral: rpcs3_ios_pad_state {
+        var s = rpcs3_ios_pad_state()
+        s.connected = 1
+        return s
+    }
+
+    private func neutralizeControllers() {
+        for index in ports.indices { Core.setPad(UInt32(index), Self.neutral) }
+        if touchConnected { Core.setPad(touchPort, Self.neutral) }
+    }
+
+    private func pushAllControllers() {
+        for (index, controller) in ports.enumerated() {
+            if let pad = controller.extendedGamepad { Core.setPad(UInt32(index), Self.state(pad)) }
+        }
     }
 
     private func disconnect(from first: Int) {
@@ -255,10 +317,13 @@ private final class Rumble {
 struct TouchPadOverlay: View {
     @ObservedObject var pad: TouchPad
     var opacity: Double
+    var scale: CGFloat = 1
 
     var body: some View {
         GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height) / 380
+            // Sized for a thumb, not for the screen: an iPad Pro would otherwise get huge
+            // buttons. `scale` is the menu's Petite / Moyenne / Grande.
+            let s = min(max(min(geo.size.width, geo.size.height) / 560, 0.9), 1.9) * scale
             ZStack {
                 // Shoulders.
                 VStack(spacing: 8 * s) {
@@ -275,7 +340,8 @@ struct TouchPadOverlay: View {
                     Spacer()
                 }
                 .padding(.horizontal, 24 * s)
-                .padding(.top, 20 * s)
+                // Below the ••• menu button in the top-right corner.
+                .padding(.top, 20 * s + 52)
 
                 VStack {
                     Spacer()

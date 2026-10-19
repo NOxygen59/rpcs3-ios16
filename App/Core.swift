@@ -206,7 +206,11 @@ enum Core {
                 config.struct_size = UInt32(MemoryLayout<rpcs3_ios_config>.size)
                 config.application_support_path = s
                 config.cache_path = c
-                config.log_callback = { _, level, message in Log.shared.append(level: level, str(message)) }
+                config.log_callback = { _, level, message in
+                    let text = str(message)
+                    Log.shared.append(level: level, text)
+                    Diagnostics.core(level: level, text)
+                }
                 config.main_thread_callback = { _, task, context in
                     guard let task else { return }
                     let ctx = context.map { UInt(bitPattern: $0) }

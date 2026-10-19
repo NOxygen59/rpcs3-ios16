@@ -143,7 +143,17 @@ final class EmulationController: ObservableObject {
     /// When the boot started, and when its progress last changed (to tell slow from stuck).
     let bootStarted = Date()
     @Published private(set) var lastProgress = Date()
-    @Published var controllerConnected = !GCController.controllers().isEmpty
+    @Published var controllerConnected = EmulationController.hasController()
+
+    static func hasController() -> Bool {
+        GCController.controllers().contains { $0.extendedGamepad != nil }
+    }
+
+    /// Re-reads whether a controller is there (notifications can be missed while booting).
+    func refreshControllers() {
+        let now = Self.hasController()
+        if now != controllerConnected { controllerConnected = now }
+    }
 
     let input = InputLoop()
     let hud = HUDModel()
@@ -207,6 +217,14 @@ final class EmulationController: ObservableObject {
     private func set(_ next: Stage) {
         guard next != stage else { return }
         lastProgress = Date()
+        switch next {
+        case let .booting(stageText, fraction):
+            if case let .booting(previous, _) = stage, previous == stageText {} else {
+                Diagnostics.event("Étape : \(stageText)\(fraction.map { String(format: " (%.0f %%)", $0 * 100) } ?? "")")
+            }
+        case let .failed(message): Diagnostics.event("Échec : \(message)")
+        default: Diagnostics.event("État : \(next)")
+        }
         let was = stage
         stage = next
         if next == .paused { input.suspend() }
@@ -215,6 +233,7 @@ final class EmulationController: ObservableObject {
     }
 
     private func poll() {
+        refreshControllers()
         switch Core.emulationState {
         case RPCS3_IOS_EMULATION_STATE_RUNNING:
             set(.running)
@@ -253,7 +272,7 @@ final class EmulationController: ObservableObject {
         let center = NotificationCenter.default
         for name in [Notification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.controllerConnected = !GCController.controllers().isEmpty }
+                Task { @MainActor in self?.refreshControllers() }
             })
         }
         // Pause when the app leaves the screen; the user resumes from the menu.
@@ -299,7 +318,42 @@ struct EmulationView: View {
     @AppStorage("rpcs3.hud") private var showHUD = true
     @AppStorage("rpcs3.touchpad") private var touchMode = 0 // 0 auto, 1 always, 2 never
     @AppStorage("rpcs3.touchpadOpacity") private var touchOpacity = 0.75
+    @AppStorage("rpcs3.touchpadScale") private var touchScale = 0 // 0 small, 1 medium, 2 large
     @State private var menu = false
+    @State private var pausedByMenu = false
+    @State private var sharing: URL?
+
+    private var title: String {
+        switch session {
+        case let .game(game, _): return game.title
+        case .xmb: return "PlayStation 3 — XMB"
+        case .bigPicture: return "Big Picture"
+        }
+    }
+
+    private func openMenu() {
+        guard !menu else { return }
+        if controller.stage == .running {
+            pausedByMenu = true
+            controller.pause()
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { menu = true }
+    }
+
+    private func closeMenu() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { menu = false }
+        if pausedByMenu {
+            pausedByMenu = false
+            controller.resume()
+        }
+    }
+
+    private func shareReport() {
+        Core.run({ (try? Core.settings()) ?? [] }) { result in
+            let settings = (try? result.get()) ?? []
+            Diagnostics.makeReport(settings: settings) { url in sharing = url }
+        }
+    }
 
     private var showTouchPad: Bool {
         switch touchMode {
@@ -319,26 +373,39 @@ struct EmulationView: View {
             .ignoresSafeArea()
 
             if controller.stage == .running || controller.stage == .paused {
-                if showTouchPad {
-                    TouchPadOverlay(pad: controller.input.touch, opacity: touchOpacity)
+                if showTouchPad && !menu {
+                    TouchPadOverlay(pad: controller.input.touch, opacity: touchOpacity, scale: [0.8, 1.0, 1.2][touchScale % 3])
+                        .transition(.opacity)
                 }
                 if showHUD { hud }
             }
 
             overlay
 
-            VStack {
-                HStack {
-                    Spacer()
-                    Button { menu = true } label: {
-                        Image(systemName: "ellipsis.circle.fill")
-                            .font(.system(size: 30))
-                            .foregroundStyle(.white.opacity(0.8), .black.opacity(0.4))
+            if menu {
+                InGameMenu(controller: controller, showHUD: $showHUD, touchMode: $touchMode, touchScale: $touchScale,
+                           title: title, close: closeMenu, report: shareReport)
+                    .zIndex(10)
+            } else {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: openMenu) {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(Color.black.opacity(0.45)))
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.top, 12)
                     }
-                    .padding(.trailing, 18)
-                    .padding(.top, 6)
+                    Spacer()
                 }
-                Spacer()
+                .zIndex(5)
             }
         }
         .statusBarHidden(true)
@@ -349,27 +416,16 @@ struct EmulationView: View {
         }
         .onChange(of: showTouchPad) { controller.input.touchEnabled = $0 }
         .onChange(of: showHUD) { controller.hudVisible = $0 }
-        .confirmationDialog("Émulation", isPresented: $menu, titleVisibility: .visible) {
-            if controller.stage == .running {
-                Button("Pause") { controller.pause() }
+        .animation(.easeInOut(duration: 0.25), value: showTouchPad)
+        .onAppear {
+            controller.input.onMenuCombo = { openMenu() }
+            controller.input.onControllerUsed = { [weak controller] in
+                Task { @MainActor in controller?.refreshControllers() }
             }
-            if controller.stage == .paused {
-                Button("Reprendre") { controller.resume() }
-            }
-            Button(showHUD ? "Masquer les performances" : "Afficher les performances") { showHUD.toggle() }
-            Button(touchModeLabel) { touchMode = (touchMode + 1) % 3 }
-            Button("Arrêter le jeu", role: .destructive) { controller.stop() }
-            Button("Annuler", role: .cancel) {}
         }
+        .sheet(item: $sharing) { ShareSheet(items: [$0]) }
     }
 
-    private var touchModeLabel: String {
-        switch touchMode {
-        case 0: return "Manette tactile : toujours"
-        case 1: return "Manette tactile : jamais"
-        default: return "Manette tactile : automatique"
-        }
-    }
 
     @ViewBuilder private var overlay: some View {
         switch controller.stage {
@@ -481,10 +537,10 @@ private struct BootOverlay: View {
                 }
                 HStack(spacing: 12) {
                     Button {
-                        let url = Core.cache.appendingPathComponent("RPCS3-journal.txt")
-                        try? Log.shared.text.write(to: url, atomically: true, encoding: .utf8)
-                        sharing = url
-                    } label: { Label("Partager le journal", systemImage: "square.and.arrow.up") }
+                        Core.run({ (try? Core.settings()) ?? [] }) { result in
+                            Diagnostics.makeReport(settings: (try? result.get()) ?? []) { sharing = $0 }
+                        }
+                    } label: { Label("Rapport de diagnostic", systemImage: "stethoscope") }
                     Button(role: .destructive) { controller.stop() } label: { Label("Arrêter", systemImage: "stop.fill") }
                 }
                 .buttonStyle(.bordered)
@@ -493,6 +549,9 @@ private struct BootOverlay: View {
             .foregroundColor(.white)
             .padding(28)
             .background(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.65)))
+            .onChange(of: stalled) { now in
+                if now { Diagnostics.event("Aucune progression ni ligne de journal depuis \(Int(Self.stallDelay)) s (étape : \(stage))") }
+            }
         }
         .onAppear { log.watch() }
         .onDisappear { log.unwatch() }

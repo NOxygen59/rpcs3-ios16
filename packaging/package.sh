@@ -9,7 +9,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-VERSION=1.2
+VERSION=1.3
 CORE="${RPCS3_CORE:-$ROOT/../rpcs3-ios/build-ios/rpcs3/libRPCS3Core.dylib}"  # see deps/build-core.sh
 [ -f "$CORE" ] || { echo "Cœur introuvable : $CORE" >&2; exit 1; }
 

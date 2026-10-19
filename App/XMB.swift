@@ -174,11 +174,13 @@ struct XMBView: View {
     @State private var importing = false
     @State private var sheet: Sheet?
     @StateObject private var pad = XMBGamepad()
+    @State private var sharing: URL?
 
     enum Sheet: Identifiable {
-        case settings, rpcn, log, about, game(Game)
+        case settings, rpcn, log, about, files, game(Game)
         var id: String {
             switch self {
+            case .files: return "files"
             case .settings: return "settings"
             case .rpcn: return "rpcn"
             case .log: return "log"
@@ -208,6 +210,8 @@ struct XMBView: View {
         }
         gameItems.append(XMBItem(id: "install", title: "Installer des fichiers…", subtitle: "Firmware, PKG, RAP, ISO + clé, ZIP, dossier de jeu",
                                  icon: .symbol("square.and.arrow.down.fill"), action: { importing = true }))
+        gameItems.append(XMBItem(id: "files", title: "Fichiers dans RPCS3", subtitle: "Ce que vous avez déposé dans Fichiers › Sur mon iPad › RPCS3",
+                                 icon: .symbol("folder.fill"), action: { sheet = .files }))
         gameItems.append(XMBItem(id: "bigpicture", title: "Mode Big Picture", subtitle: "La bibliothèque de RPCS3, à la manette",
                                  icon: .symbol("tv.fill"), action: { app.session = .bigPicture }))
 
@@ -217,6 +221,7 @@ struct XMBView: View {
                 XMBItem(id: "theme", title: "Thème : \(animated ? "animé" : "fixe")", subtitle: "Les vagues du fond (fixe : moins de batterie)", icon: .symbol("paintbrush.fill"), action: { animated.toggle() }),
                 XMBItem(id: "about", title: "Système", subtitle: "JIT, mémoire, firmware, version", icon: .symbol("info.circle.fill"), action: { sheet = .about }),
                 XMBItem(id: "log", title: "Journal", subtitle: "Messages du moteur", icon: .symbol("doc.text.fill"), action: { sheet = .log }),
+                XMBItem(id: "report", title: "Rapport de diagnostic", subtitle: "Les infos utiles pour corriger un problème, à envoyer", icon: .symbol("stethoscope"), action: shareReport),
             ]),
             XMBCategory(id: "game", title: "Jeu", symbol: "gamecontroller.fill", items: gameItems),
             XMBCategory(id: "network", title: "Réseau", symbol: "globe", items: [
@@ -244,6 +249,7 @@ struct XMBView: View {
                 // bar, those before it above.
                 let cat = cats[current]
                 let sel = selected(in: cat)
+                ZStack(alignment: .topLeading) {
                 ForEach(Array(cat.items.enumerated()), id: \.element.id) { index, item in
                     let isSelected = index == sel
                     let below = barY + 92 + CGFloat(index - sel) * rowHeight
@@ -254,10 +260,16 @@ struct XMBView: View {
                         .position(x: anchorX - 40 + 260, y: y)
                         .opacity(index < sel ? 0.55 : (isSelected ? 1 : 0.75))
                         .onTapGesture {
-                            if isSelected { item.action() } else { withAnimation(.easeOut(duration: 0.2)) { selection[cat.id] = index } }
+                            if isSelected { item.action() } else { withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { selection[cat.id] = index } }
                         }
                     }
                 }
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                // A new category's column glides in from the side it comes from and fades.
+                .id(cat.id)
+                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 36)),
+                                        removal: .opacity.combined(with: .offset(x: -24))))
 
                 // The categories.
                 ForEach(Array(cats.enumerated()), id: \.element.id) { index, c in
@@ -273,7 +285,7 @@ struct XMBView: View {
                     .foregroundColor(.white.opacity(index == current ? 1 : 0.65))
                     .frame(width: 120, height: 100)
                     .position(x: x, y: barY)
-                    .onTapGesture { withAnimation(.easeOut(duration: 0.25)) { category = index } }
+                    .onTapGesture { withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { category = index } }
                 }
 
                 // Top right: status and clock.
@@ -292,7 +304,7 @@ struct XMBView: View {
                     let t = value.translation
                     let cat = cats[current]
                     let sel = selected(in: cat)
-                    withAnimation(.easeOut(duration: 0.25)) {
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
                         if abs(t.width) > abs(t.height), abs(t.width) > 40 {
                             category = min(max(current - Int((t.width / spacing).rounded(t.width > 0 ? .up : .down)), 0), cats.count - 1)
                         } else if abs(t.height) > 24 {
@@ -331,6 +343,7 @@ struct XMBView: View {
                     case .rpcn: RPCNView()
                     case .log: LogView()
                     case .about: AboutView()
+                    case .files: LocalFilesView()
                     case let .game(game): GameDetailView(game: game)
                     }
                 }
@@ -339,16 +352,30 @@ struct XMBView: View {
             .environmentObject(app)
             .preferredColorScheme(.dark)
         }
+        .background(EmptyView().sheet(item: $sharing) { ShareSheet(items: [$0]) })
     }
 
     /// A controller press: move along the bar or the column, ✕ opens, △ shows a game's options.
     private func handle(_ input: XMBGamepad.Input) {
-        guard sheet == nil, app.session == nil, !importing else { return }
+        guard app.session == nil, !importing, sharing == nil else { return }
+        // A sheet is open: ○ closes it; on a game's options, ✕ plays.
+        if let open = sheet {
+            switch input {
+            case .back: sheet = nil
+            case .confirm:
+                if case let .game(game) = open {
+                    sheet = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { app.play(game) }
+                }
+            default: break
+            }
+            return
+        }
         let cats = categories
         let current = min(max(category, 0), cats.count - 1)
         let cat = cats[current]
         let sel = selected(in: cat)
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             switch input {
             case .left: category = max(current - 1, 0)
             case .right: category = min(current + 1, cats.count - 1)
@@ -356,6 +383,15 @@ struct XMBView: View {
             case .down: selection[cat.id] = min(sel + 1, max(cat.items.count - 1, 0))
             case .confirm: if cat.items.indices.contains(sel) { cat.items[sel].action() }
             case .options: if let game = cat.items[safe: sel]?.game { sheet = .game(game) }
+            case .back: break
+            }
+        }
+    }
+
+    private func shareReport() {
+        Core.run({ (try? Core.settings()) ?? [] }) { result in
+            Diagnostics.makeReport(settings: (try? result.get()) ?? []) { url in
+                if let url { sharing = url } else { app.message = "Impossible d'écrire le rapport." }
             }
         }
     }
@@ -445,7 +481,7 @@ private struct XMBRow: View {
             }
         }
         .frame(width: 520, alignment: .leading)
-        .animation(.easeOut(duration: 0.18), value: selected)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: selected)
     }
 }
 
@@ -476,67 +512,97 @@ private struct XMBTile: View {
 
 // MARK: - Game controllers on the bar
 
-/// Reads controllers while the bar is on screen (the game takes them over while it runs):
-/// directions repeat while held, as on the console.
+/// Reads controllers while the bar is on screen (the game takes them over while it runs).
 final class XMBGamepad: ObservableObject {
-    enum Input { case left, right, up, down, confirm, options }
+    typealias Input = PadNavigator.Input
 
-    var handler: ((Input) -> Void)?
-    private var held: Input?
-    private var repeatTimer: Timer?
+    var handler: ((Input) -> Void)? { didSet { navigator.handler = handler } }
+    private let navigator = PadNavigator()
     private var observers: [NSObjectProtocol] = []
     private var running = false
 
     func start() {
         guard !running else { return }
         running = true
+        navigator.reset()
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] _ in self?.attach() })
         attach()
     }
 
+    /// The handlers stay (a game replaces them with its own); they just stop reacting.
     func stop() {
         guard running else { return }
         running = false
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
-        release()
+        navigator.reset()
     }
 
     private func attach() {
         for controller in GCController.controllers() {
             guard let pad = controller.extendedGamepad else { continue }
-            pad.valueChangedHandler = { [weak self] pad, element in self?.changed(pad, element) }
-        }
-    }
-
-    private func changed(_ pad: GCExtendedGamepad, _ element: GCControllerElement) {
-        guard running else { return }
-        if element === pad.buttonA, pad.buttonA.isPressed { fire(.confirm); return }
-        if element === pad.buttonY, pad.buttonY.isPressed { fire(.options); return }
-        let x = pad.dpad.xAxis.value + pad.leftThumbstick.xAxis.value
-        let y = pad.dpad.yAxis.value + pad.leftThumbstick.yAxis.value
-        let direction: Input? = abs(x) > 0.5 && abs(x) >= abs(y) ? (x > 0 ? .right : .left)
-            : abs(y) > 0.5 ? (y > 0 ? .up : .down) : nil
-        guard direction != held else { return }
-        release()
-        guard let direction else { return }
-        held = direction
-        fire(direction)
-        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.38, repeats: false) { [weak self] _ in
-            self?.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.11, repeats: true) { [weak self] _ in
-                if let held = self?.held { self?.fire(held) }
+            pad.valueChangedHandler = { [weak self] pad, _ in
+                guard let self, self.running else { return }
+                self.navigator.feed(pad)
             }
         }
     }
+}
 
-    private func release() {
-        held = nil
-        repeatTimer?.invalidate()
-        repeatTimer = nil
+/// What was dropped in Files › On My iPad › RPCS3 (Jeux, Firmware), ready to install.
+struct LocalFilesView: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var files: [URL] = []
+
+    var body: some View {
+        List {
+            Section {
+                if files.isEmpty {
+                    Text("Rien pour l'instant. Dans l'app Fichiers, ouvrez Sur mon iPad › RPCS3 et déposez le firmware dans « Firmware », les jeux (.pkg + .rap, .iso + .dkey, .zip, dossiers) dans « Jeux ».")
+                        .foregroundColor(.secondary)
+                }
+                ForEach(files, id: \.self) { url in
+                    HStack {
+                        Image(systemName: icon(url)).frame(width: 26)
+                        VStack(alignment: .leading) {
+                            Text(url.lastPathComponent).lineLimit(1)
+                            Text(url.deletingLastPathComponent().lastPathComponent).font(.caption).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if !["dkey", "key"].contains(url.pathExtension.lowercased()) {
+                            Button("Installer") { install([url]) }.buttonStyle(.bordered)
+                        }
+                    }
+                }
+            } footer: {
+                Text("Une clé .dkey ou .key est utilisée avec l'.iso du même nom. Les fichiers restent dans le dossier après l'installation : supprimez-les dans Fichiers pour libérer la place.")
+            }
+            if files.count > 1 {
+                Section { Button("Tout installer") { install(files) } }
+            }
+        }
+        .navigationTitle("Fichiers dans RPCS3")
+        .refreshable { files = Storage.installables() }
+        .onAppear { files = Storage.installables() }
     }
 
-    private func fire(_ input: Input) {
-        handler?(input)
+    private func icon(_ url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "pup": return "cpu"
+        case "pkg": return "shippingbox"
+        case "rap", "dkey", "key": return "key"
+        case "iso": return "opticaldisc"
+        case "zip": return "doc.zipper"
+        default: return "folder"
+        }
+    }
+
+    private func install(_ urls: [URL]) {
+        // The keys go with their images.
+        let keys = files.filter { ["dkey", "key"].contains($0.pathExtension.lowercased()) }
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { app.install(urls + keys) }
     }
 }

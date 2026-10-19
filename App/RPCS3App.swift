@@ -5,12 +5,17 @@ import SwiftUI
 @main
 struct RPCS3App: App {
     @StateObject private var app = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(app)
                 .preferredColorScheme(.dark)
+                .onChange(of: scenePhase) { phase in
+                    // In the background iOS may end the app at any time: that is a normal end.
+                    if phase == .background { Diagnostics.appWillEnd() } else if phase == .active { Diagnostics.appDidResume() }
+                }
                 .onOpenURL { url in
                     // Files opened with RPCS3 (PKG, PUP, ISO, RAP…) from Files or another app.
                     if url.isFileURL, app.phase == .ready { app.install([url]) }

@@ -30,6 +30,7 @@ Numérotation propre, « RPCS3 iOS 16 », en parallèle des releases officielles
 
 | RPCS3 iOS 16 | Basé sur RPCS3 iOS (XITRIX) | Release | Contenu |
 |---|---|---|---|
+| 1.3 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.3](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.3) | Dossier RPCS3 dans Fichiers ; protocole de diagnostic ; nouveau menu en jeu (au doigt et à la manette) ; manette tactile masquée avec une manette, plus petite et réglable ; transitions plus fluides |
 | 1.2 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.2](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.2) | Tuile « PlayStation 3 — XMB » dans la liste des jeux ; écran de chargement avec chrono et journal en direct ; « Redémarrer sans précompilation » si rien ne bouge pendant 2 minutes |
 | 1.1 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.1](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.1) | Accueil façon XMB de la PS3, fond animé selon le mois et l'heure, indicateurs JIT / mémoire accrue / adressage étendu, navigation à la manette |
 | 1.0 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16) | Cœur recompilé pour iOS 16, interface SwiftUI en français, optimisé batterie, son corrigé |
@@ -45,6 +46,17 @@ L'écran d'accueil reprend le **XMB de la PS3** :
 - **Le vrai XMB** du firmware est la première tuile de Jeu, « PlayStation 3 — XMB », comme un jeu.
 - **Chargement :** l'écran affiche le temps écoulé et les dernières lignes du journal en direct, ce qui permet de voir si RPCS3 travaille encore. Si ni la progression ni le journal ne bougent pendant 2 minutes, le bouton « Redémarrer sans précompilation » relance sans construire tout le cache PPU/SPU d'abord : RPCS3 compile alors au fil du jeu. Le réglage d'origine est rétabli en quittant.
 - **Manette :** la croix directionnelle ou le stick se déplacent dans la barre, ✕ ouvre, △ affiche les options d'un jeu. Au doigt, on glisse ou on touche, et toucher l'élément sélectionné l'ouvre.
+
+## Fichiers et diagnostic
+
+- **Fichiers › Sur mon iPad › RPCS3** : déposer le firmware dans `Firmware`, les jeux (.pkg + .rap, .iso + .dkey, .zip, dossiers) dans `Jeux`, puis les installer depuis **Jeu › Fichiers dans RPCS3**.
+- **Diagnostic** : RPCS3 écrit en continu, dans `Diagnostics/journal-important.log`, seulement les lignes utiles. Ce sont les erreurs, les avertissements et les messages sur le JIT, la compilation, les caches, le démarrage et la mémoire, plus les événements de l'app (lancement, étapes, blocage détecté). Le fichier survit à un plantage ou à un blocage.
+- **Paramètres › Rapport de diagnostic** (aussi sur l'écran de chargement et dans le menu en jeu) crée un fichier compact à envoyer. Il contient l'appareil, iOS, le JIT et la mémoire, les réglages modifiés, la session en cours et, si elle s'est mal terminée, la fin de la session précédente.
+
+## En jeu
+
+- **Menu en jeu :** le bouton ••• en haut à droite, ou Select + Start ensemble sur une manette, ouvre le menu. Le jeu se met en pause et le menu se pilote au doigt ou à la manette (✕ choisir, ○ fermer). On y trouve : reprendre, affichage des performances, manette tactile (automatique, toujours, jamais), taille de la manette tactile (petite, moyenne, grande), rapport de diagnostic, arrêter.
+- **Manette tactile :** en mode automatique, elle disparaît dès qu'une manette est connectée ou utilisée.
 
 ## Installer
 

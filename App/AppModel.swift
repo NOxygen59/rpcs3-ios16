@@ -41,7 +41,10 @@ final class AppModel: ObservableObject {
     @Published var task: Work?
     @Published var message: String?
     @Published var session: Session? {
-        didSet { if session != nil { coverShown = true } }
+        didSet {
+            if session != nil { coverShown = true }
+            if let session, session != oldValue { Diagnostics.event("Lancement : \(session.id)") }
+        }
     }
     /// A session to start once the game screen has really gone away (iOS reuses a screen that
     /// is still closing when the same session comes back too soon).
@@ -49,7 +52,10 @@ final class AppModel: ObservableObject {
     private var coverShown = false
     @Published private(set) var jitless = false
 
-    init() {}
+    init() {
+        Storage.prepare()
+        Diagnostics.start()
+    }
 
     // MARK: Starting
 
@@ -93,10 +99,12 @@ final class AppModel: ObservableObject {
             switch result {
             case .success:
                 self.phase = .ready
+                Diagnostics.event("Cœur prêt (\(self.jitless ? "sans JIT" : "JIT")) — " + Diagnostics.systemSummary(core: true).suffix(2).joined(separator: " ; "))
                 self.reload()
                 self.restorePrecompilationIfNeeded()
                 Task { try? await Online.refreshConfigDatabase() }
             case let .failure(error):
+                Diagnostics.event("Échec du démarrage du cœur : \(error.localizedDescription)")
                 if (error as? CoreError)?.code == RPCS3_IOS_JIT_UNAVAILABLE {
                     self.phase = .needsJIT
                 } else {
@@ -189,6 +197,7 @@ final class AppModel: ObservableObject {
     /// off, then starts the same session again; RPCS3 then compiles SPU code as it runs instead
     /// of building the whole cache first.
     func retryWithoutPrecompilation(_ session: Session) {
+        Diagnostics.event("Redémarrage sans précompilation demandé")
         Core.run({ () -> String in
             let current = (try? Core.settings())?.first { $0.key == Self.precompilationKey }?.value ?? "true"
             try Core.setSetting(Self.precompilationKey, "false")
