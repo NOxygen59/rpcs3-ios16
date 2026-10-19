@@ -74,6 +74,12 @@ enum Diagnostics {
 
     /// RPCS3 levels: 0 always, 1 fatal, 2 error, 3 todo, 4 success, 5 warning, 6 notice, 7 trace.
     private static func isImportant(level: Int32, _ text: String) -> Bool {
+        // Guest syscall traces ("PPU[0x…] Thread (…) [0x…]: sys_…") and the periodic usage
+        // tables are warnings by thousands a minute: noise, unless they failed (errors stay).
+        if level >= 3, text.hasPrefix("PPU["), text.contains("]: sys_") || text.contains("]: _sys_") || text.contains("]: cell") { return false }
+        if text.contains("PPU Syscall Usage Stats") { return false }
+        // The module loader's per-symbol export / import / relocation traces ("**** …").
+        if level >= 4, text.contains("**** ") { return false }
         if level <= 5 { return true }
         if level == 6 {
             let lower = text.lowercased()
@@ -129,6 +135,7 @@ enum Diagnostics {
     /// Builds the report and saves it in Diagnostics (to share or to find in Files).
     static func makeReport(settings: [Setting], completion: @escaping (URL?) -> Void) {
         let changed = settings.filter { $0.value != $0.defaultValue }
+        let pending = (UserDefaults.standard.dictionary(forKey: "rpcs3.restoreSettings") as? [String: String]) ?? [:]
         queue.async {
             flushNow()
             var text = "RAPPORT DE DIAGNOSTIC RPCS3 iOS 16 — \(timestamp())\n\n"
@@ -136,6 +143,9 @@ enum Diagnostics {
             text += "Session précédente : \(previousSessionEndedAbnormally ? "terminée ANORMALEMENT" : "terminée normalement")\n\n"
             text += "== Réglages différents des valeurs par défaut (\(changed.count)) ==\n"
             text += changed.isEmpty ? "(aucun)\n" : changed.map { "\($0.key) = \($0.value)  (défaut : \($0.defaultValue))" }.joined(separator: "\n") + "\n"
+            if !pending.isEmpty {
+                text += "Réglages temporaires en cours (à rétablir) : " + pending.map { "\($0.key) → \($0.value)" }.joined(separator: ", ") + "\n"
+            }
             text += "\n== Cette session : lignes importantes ==\n"
             text += tail(of: logURL, lines: 600)
             if previousSessionEndedAbnormally {

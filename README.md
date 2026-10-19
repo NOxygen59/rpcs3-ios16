@@ -30,6 +30,7 @@ Numérotation propre, « RPCS3 iOS 16 », en parallèle des releases officielles
 
 | RPCS3 iOS 16 | Basé sur RPCS3 iOS (XITRIX) | Release | Contenu |
 |---|---|---|---|
+| 1.4 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.4](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.4) | Catégories Utilisateurs, PlayStation Network et Amis ; icônes façon PS3 ; vraies transitions gauche/droite (doigt, trackpad, manette) ; mode compatibilité XMB ; journal de diagnostic allégé |
 | 1.3 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.3](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.3) | Dossier RPCS3 dans Fichiers ; protocole de diagnostic ; nouveau menu en jeu (au doigt et à la manette) ; manette tactile masquée avec une manette, plus petite et réglable ; transitions plus fluides |
 | 1.2 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.2](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.2) | Tuile « PlayStation 3 — XMB » dans la liste des jeux ; écran de chargement avec chrono et journal en direct ; « Redémarrer sans précompilation » si rien ne bouge pendant 2 minutes |
 | 1.1 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.1](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.1) | Accueil façon XMB de la PS3, fond animé selon le mois et l'heure, indicateurs JIT / mémoire accrue / adressage étendu, navigation à la manette |
@@ -40,11 +41,14 @@ Numérotation propre, « RPCS3 iOS 16 », en parallèle des releases officielles
 ![L'accueil façon XMB](docs/xmb.png)
 
 L'écran d'accueil reprend le **XMB de la PS3** :
-- **Catégories :** Paramètres, Jeu et Réseau en ligne, les éléments de la catégorie en colonne, ceux d'avant la sélection au-dessus de la barre.
+- **Catégories, dans l'ordre de la PS3 :** Utilisateurs (profils locaux, celui connecté en haut à droite), Paramètres, Jeu, Réseau, PlayStation Network (qui mène à RPCN) et Amis (amis fictifs en ligne, hors ligne ou invisibles, pour la nostalgie), en ligne, les éléments de la catégorie en colonne, ceux d'avant la sélection au-dessus de la barre.
 - **Fond :** le thème « Original », un dégradé à la couleur du mois et à la luminosité de l'heure, avec des vagues animées. Elles tournent à 20 images par seconde, rendues par la puce graphique, et se mettent en pause pendant un jeu ou en arrière-plan. Paramètres › Thème permet de les figer.
 - **En haut à droite :** la date et l'heure, et les indicateurs **JIT**, **mémoire accrue** (`increased-memory-limit`) et **adressage étendu** (`extended-virtual-addressing`), en vert quand ils sont accordés, avec la mémoire encore disponible.
 - **Le vrai XMB** du firmware est la première tuile de Jeu, « PlayStation 3 — XMB », comme un jeu.
 - **Chargement :** l'écran affiche le temps écoulé et les dernières lignes du journal en direct, ce qui permet de voir si RPCS3 travaille encore. Si ni la progression ni le journal ne bougent pendant 2 minutes, le bouton « Redémarrer sans précompilation » relance sans construire tout le cache PPU/SPU d'abord : RPCS3 compile alors au fil du jeu. Le réglage d'origine est rétabli en quittant.
+- **Transitions :** en changeant de catégorie, la barre glisse et la colonne entre par le côté vers lequel on va, que ce soit au doigt, au clic ou à la manette.
+- **Icônes :** dans le style des icônes blanches de la PS3, redessinées et non copiées (les originales appartiennent à Sony).
+- **Mode compatibilité XMB** (Paramètres, activé par défaut) : au lancement du vrai XMB, les optimisations expérimentales de la file de commandes du RSX reprennent leur comportement d'origine RPCS3 le temps de la session. Elles sont soupçonnées de bloquer le XMB juste après l'initialisation du RSX.
 - **Manette :** la croix directionnelle ou le stick se déplacent dans la barre, ✕ ouvre, △ affiche les options d'un jeu. Au doigt, on glisse ou on touche, et toucher l'élément sélectionné l'ouvre.
 
 ## Fichiers et diagnostic

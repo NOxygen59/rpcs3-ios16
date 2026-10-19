@@ -281,8 +281,17 @@ final class EmulationController: ObservableObject {
         })
     }
 
-    func pause() { Core.run({ try Core.pause() }) { _ in self.poll() } }
-    func resume() { Core.run({ try Core.resume() }) { _ in self.poll() } }
+    // On the main thread: RPCS3 runs pause and resume through BlockingCallFromMainThread, which
+    // logged an error when called from the core queue's thread. Both take a few milliseconds.
+    func pause() {
+        try? Core.pause()
+        poll()
+    }
+
+    func resume() {
+        try? Core.resume()
+        poll()
+    }
 
     func stop() {
         set(.stopping)

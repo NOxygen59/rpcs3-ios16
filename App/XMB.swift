@@ -145,6 +145,8 @@ struct XMBItem: Identifiable {
         case game(String)
         /// The PS3's own menu, drawn as a game tile.
         case system
+        /// A user or a friend.
+        case avatar(Int, String, XMBFriend.Status?)
     }
 
     let id: String
@@ -152,13 +154,15 @@ struct XMBItem: Identifiable {
     let subtitle: String
     let icon: Icon
     var game: Game?
+    /// △: a game's options, a user's or a friend's settings.
+    var options: (() -> Void)?
     let action: () -> Void
 }
 
 struct XMBCategory: Identifiable {
     let id: String
     let title: String
-    let symbol: String
+    let icon: XMBCategoryIcon
     let items: [XMBItem]
 }
 
@@ -168,7 +172,13 @@ struct XMBView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("rpcs3.xmb.animated") private var animated = true
-    @AppStorage("rpcs3.xmb.category") private var category = 1
+    @AppStorage("rpcs3.xmbCompat") private var xmbCompat = true
+    // @State (animatable), saved to the defaults on change: an @AppStorage value changes
+    // outside the animation transaction, so the bar and the column didn't slide.
+    @State private var categoryID = UserDefaults.standard.string(forKey: "rpcs3.xmb.categoryID") ?? "game"
+    /// +1 when the bar moved right (the next category), -1 left: which way the column slides.
+    @State private var direction: CGFloat = 1
+    @StateObject private var social = XMBSocial()
     @State private var selection: [String: Int] = [:]
     @State private var drag = CGSize.zero
     @State private var importing = false
@@ -177,9 +187,11 @@ struct XMBView: View {
     @State private var sharing: URL?
 
     enum Sheet: Identifiable {
-        case settings, rpcn, log, about, files, game(Game)
+        case settings, rpcn, log, about, files, game(Game), profile(XMBProfile, new: Bool), friend(XMBFriend, new: Bool)
         var id: String {
             switch self {
+            case let .profile(p, _): return "profile-\(p.id)"
+            case let .friend(f, _): return "friend-\(f.id)"
             case .files: return "files"
             case .settings: return "settings"
             case .rpcn: return "rpcn"
@@ -203,7 +215,7 @@ struct XMBView: View {
         // The console's own menu, first in the list like a game.
         gameItems.append(XMBItem(id: "vsh", title: "PlayStation 3 — XMB",
                                  subtitle: app.firmware.isEmpty ? "Installez d'abord le firmware PS3" : "Le vrai menu de la console, firmware \(app.firmware)",
-                                 icon: .system, action: { if app.firmware.isEmpty { importing = true } else { app.session = .xmb } }))
+                                 icon: .system, action: { if app.firmware.isEmpty { importing = true } else { app.bootXMB() } }))
         gameItems += games.map { game in
             XMBItem(id: "game-\(game.titleID)", title: game.title, subtitle: "\(game.titleID) · v\(game.version)",
                     icon: .game(game.iconPath), game: game, action: { app.play(game) })
@@ -215,21 +227,68 @@ struct XMBView: View {
         gameItems.append(XMBItem(id: "bigpicture", title: "Mode Big Picture", subtitle: "La bibliothèque de RPCS3, à la manette",
                                  icon: .symbol("tv.fill"), action: { app.session = .bigPicture }))
 
+        let users: [XMBItem] = social.profiles.map { profile in
+            let signedIn = profile.id == social.signedIn?.id
+            return XMBItem(id: "user-\(profile.id)", title: profile.name,
+                           subtitle: signedIn ? "Connecté · △ pour modifier" : "Toucher pour se connecter · △ pour modifier",
+                           icon: .avatar(profile.colorIndex, profile.symbol, signedIn ? .online : nil),
+                           options: { sheet = .profile(profile, new: false) },
+                           action: { withAnimation { social.currentProfile = profile.id } })
+        } + [XMBItem(id: "user-new", title: "Nouvel utilisateur", subtitle: "Créer un profil", icon: .symbol("person.crop.circle.badge.plus"),
+                     action: { sheet = .profile(XMBProfile(name: "", colorIndex: social.profiles.count, symbol: "person.fill"), new: true) })]
+
+        let order: [XMBFriend.Status] = [.online, .invisible, .offline]
+        let friends: [XMBItem] = [XMBItem(id: "friend-new", title: "Ajouter un ami", subtitle: "Créer un ami (pour la nostalgie)", icon: .symbol("person.badge.plus"),
+                                          action: { sheet = .friend(XMBFriend(name: "", status: .online, colorIndex: social.friends.count + 2, symbol: "person.fill", activity: ""), new: true) })]
+            + social.friends.sorted { (order.firstIndex(of: $0.status) ?? 0, $0.name) < (order.firstIndex(of: $1.status) ?? 0, $1.name) }.map { friend in
+                let detail: String
+                switch friend.status {
+                case .online: detail = friend.activity.isEmpty ? "En ligne" : "En ligne · Joue à \(friend.activity)"
+                case .offline: detail = "Hors ligne"
+                case .invisible: detail = "Invisible (les autres le voient hors ligne)"
+                }
+                return XMBItem(id: "friend-\(friend.id)", title: friend.name, subtitle: detail,
+                               icon: .avatar(friend.colorIndex, friend.symbol, friend.status),
+                               options: { sheet = .friend(friend, new: false) },
+                               action: { sheet = .friend(friend, new: false) })
+            }
+
         return [
-            XMBCategory(id: "settings", title: "Paramètres", symbol: "gearshape.fill", items: [
+            XMBCategory(id: "users", title: "Utilisateurs", icon: .users, items: users),
+            XMBCategory(id: "settings", title: "Paramètres", icon: .settings, items: [
                 XMBItem(id: "rpcs3", title: "Réglages de RPCS3", subtitle: "Processeur, graphismes, audio, système…", icon: .symbol("slider.horizontal.3"), action: { sheet = .settings }),
                 XMBItem(id: "theme", title: "Thème : \(animated ? "animé" : "fixe")", subtitle: "Les vagues du fond (fixe : moins de batterie)", icon: .symbol("paintbrush.fill"), action: { animated.toggle() }),
+                XMBItem(id: "xmbcompat", title: "Compatibilité XMB : \(xmbCompat ? "activée" : "désactivée")", subtitle: "Au lancement du XMB, le RSX fonctionne comme dans RPCS3 d'origine", icon: .symbol("cpu"), action: { xmbCompat.toggle() }),
                 XMBItem(id: "about", title: "Système", subtitle: "JIT, mémoire, firmware, version", icon: .symbol("info.circle.fill"), action: { sheet = .about }),
                 XMBItem(id: "log", title: "Journal", subtitle: "Messages du moteur", icon: .symbol("doc.text.fill"), action: { sheet = .log }),
                 XMBItem(id: "report", title: "Rapport de diagnostic", subtitle: "Les infos utiles pour corriger un problème, à envoyer", icon: .symbol("stethoscope"), action: shareReport),
             ]),
-            XMBCategory(id: "game", title: "Jeu", symbol: "gamecontroller.fill", items: gameItems),
-            XMBCategory(id: "network", title: "Réseau", symbol: "globe", items: [
-                XMBItem(id: "rpcn", title: "RPCN", subtitle: "Compte, serveur et amis pour jouer en ligne", icon: .symbol("person.2.fill"), action: { sheet = .rpcn }),
+            XMBCategory(id: "game", title: "Jeu", icon: .game, items: gameItems),
+            XMBCategory(id: "network", title: "Réseau", icon: .network, items: [
                 XMBItem(id: "patches", title: "Mettre à jour les patchs", subtitle: "Dépôt de patchs de RPCS3", icon: .symbol("bandage.fill"), action: refreshPatches),
                 XMBItem(id: "configdb", title: "Mettre à jour la base de configuration", subtitle: "Réglages recommandés par jeu", icon: .symbol("arrow.triangle.2.circlepath"), action: refreshConfigDatabase),
             ]),
+            XMBCategory(id: "psn", title: "PlayStation\u{00AE}Network", icon: .psn, items: [
+                XMBItem(id: "rpcn-account", title: "Gestion du compte", subtitle: "Compte RPCN : connexion, création, jeton", icon: .symbol("person.text.rectangle.fill"), action: { sheet = .rpcn }),
+                XMBItem(id: "rpcn-server", title: "Serveur", subtitle: "Choisir ou ajouter un serveur RPCN", icon: .symbol("server.rack"), action: { sheet = .rpcn }),
+                XMBItem(id: "rpcn-friends", title: "Amis en ligne (RPCN)", subtitle: "Les vrais amis, pendant qu'un jeu en ligne tourne", icon: .symbol("person.2.wave.2.fill"), action: { sheet = .rpcn }),
+            ]),
+            XMBCategory(id: "friends", title: "Amis", icon: .friends, items: friends),
         ]
+    }
+
+    private func currentIndex(_ cats: [XMBCategory]) -> Int {
+        cats.firstIndex { $0.id == categoryID } ?? (cats.firstIndex { $0.id == "game" } ?? 0)
+    }
+
+    /// Moves the bar to `index`; the column slides in from that side.
+    private func selectCategory(_ index: Int, in cats: [XMBCategory]) {
+        let target = min(max(index, 0), cats.count - 1)
+        let from = currentIndex(cats)
+        guard target != from else { return }
+        direction = target > from ? 1 : -1
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) { categoryID = cats[target].id }
+        UserDefaults.standard.set(cats[target].id, forKey: "rpcs3.xmb.categoryID")
     }
 
     private func selected(in category: XMBCategory) -> Int {
@@ -239,7 +298,7 @@ struct XMBView: View {
     var body: some View {
         GeometryReader { geo in
             let cats = categories
-            let current = min(max(category, 0), cats.count - 1)
+            let current = currentIndex(cats)
             let barY = geo.size.height * 0.30
             let anchorX = geo.size.width * 0.24
             ZStack(alignment: .topLeading) {
@@ -256,7 +315,7 @@ struct XMBView: View {
                     let above = barY - 62 - CGFloat(sel - 1 - index) * rowHeight
                     let y = (index >= sel ? below : above) + (abs(drag.height) > abs(drag.width) ? drag.height : 0)
                     if y > -rowHeight, y < geo.size.height + rowHeight {
-                    XMBRow(item: item, selected: isSelected, onOptions: item.game.map { game in { sheet = .game(game) } })
+                    XMBRow(item: item, selected: isSelected, onOptions: item.options ?? item.game.map { game in { sheet = .game(game) } })
                         .position(x: anchorX - 40 + 260, y: y)
                         .opacity(index < sel ? 0.55 : (isSelected ? 1 : 0.75))
                         .onTapGesture {
@@ -266,31 +325,40 @@ struct XMBView: View {
                 }
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                // A new category's column glides in from the side it comes from and fades.
+                // Follows the finger across, then the next category's column slides in from the
+                // side the bar moves to while this one slides out the other way, as on the PS3.
+                .offset(x: abs(drag.width) > abs(drag.height) ? drag.width : 0)
                 .id(cat.id)
-                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 36)),
-                                        removal: .opacity.combined(with: .offset(x: -24))))
+                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: spacing * direction)),
+                                        removal: .opacity.combined(with: .offset(x: -spacing * direction))))
 
                 // The categories.
                 ForEach(Array(cats.enumerated()), id: \.element.id) { index, c in
                     let x = anchorX + CGFloat(index - current) * spacing + (abs(drag.width) > abs(drag.height) ? drag.width : 0)
                     VStack(spacing: 8) {
-                        Image(systemName: c.symbol)
-                            .font(.system(size: index == current ? 46 : 36, weight: .regular))
+                        c.icon.view(size: index == current ? 52 : 40)
                             .shadow(color: .white.opacity(index == current ? 0.6 : 0), radius: 10)
                         Text(c.title)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+                            .fixedSize()
                             .opacity(index == current ? 1 : 0)
                     }
                     .foregroundColor(.white.opacity(index == current ? 1 : 0.65))
                     .frame(width: 120, height: 100)
                     .position(x: x, y: barY)
-                    .onTapGesture { withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { category = index } }
+                    .onTapGesture { selectCategory(index, in: cats) }
                 }
 
                 // Top right: status and clock.
                 HStack(spacing: 14) {
                     XMBStatus()
+                    if let user = social.signedIn {
+                        HStack(spacing: 6) {
+                            XMBAvatarView(colorIndex: user.colorIndex, symbol: user.symbol, size: 24)
+                            Text(user.name).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(.white)
+                        }
+                    }
                     XMBClock()
                 }
                 .padding(.top, 14)
@@ -304,9 +372,12 @@ struct XMBView: View {
                     let t = value.translation
                     let cat = cats[current]
                     let sel = selected(in: cat)
+                    if abs(t.width) > abs(t.height), abs(t.width) > 40 {
+                        // One category per swipe, as on the console.
+                        selectCategory(current + (t.width > 0 ? -1 : 1), in: cats)
+                    }
                     withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
-                        if abs(t.width) > abs(t.height), abs(t.width) > 40 {
-                            category = min(max(current - Int((t.width / spacing).rounded(t.width > 0 ? .up : .down)), 0), cats.count - 1)
+                        if abs(t.width) > abs(t.height) {
                         } else if abs(t.height) > 24 {
                             let steps = Int((t.height / rowHeight).rounded(t.height > 0 ? .up : .down))
                             selection[cat.id] = min(max(sel - steps, 0), max(cat.items.count - 1, 0))
@@ -345,6 +416,8 @@ struct XMBView: View {
                     case .about: AboutView()
                     case .files: LocalFilesView()
                     case let .game(game): GameDetailView(game: game)
+                    case let .profile(profile, new): XMBProfileEditor(social: social, profile: profile, isNew: new)
+                    case let .friend(friend, new): XMBFriendEditor(social: social, friend: friend, isNew: new)
                     }
                 }
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { sheet = nil } } }
@@ -372,17 +445,21 @@ struct XMBView: View {
             return
         }
         let cats = categories
-        let current = min(max(category, 0), cats.count - 1)
+        let current = currentIndex(cats)
         let cat = cats[current]
         let sel = selected(in: cat)
+        if input == .left { selectCategory(current - 1, in: cats); return }
+        if input == .right { selectCategory(current + 1, in: cats); return }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             switch input {
-            case .left: category = max(current - 1, 0)
-            case .right: category = min(current + 1, cats.count - 1)
+            case .left, .right: break
             case .up: selection[cat.id] = max(sel - 1, 0)
             case .down: selection[cat.id] = min(sel + 1, max(cat.items.count - 1, 0))
             case .confirm: if cat.items.indices.contains(sel) { cat.items[sel].action() }
-            case .options: if let game = cat.items[safe: sel]?.game { sheet = .game(game) }
+            case .options:
+                if let item = cat.items[safe: sel] {
+                    if let options = item.options { options() } else if let game = item.game { sheet = .game(game) }
+                }
             case .back: break
             }
         }
@@ -443,6 +520,10 @@ private struct XMBRow: View {
                 case let .game(path):
                     GameIcon(path: path, size: selected ? 62 : 46)
                         .shadow(color: .white.opacity(selected ? 0.45 : 0), radius: 12)
+                case let .avatar(color, symbol, status):
+                    XMBAvatarView(colorIndex: color, symbol: symbol, size: selected ? 58 : 44, status: status)
+                        .frame(width: selected ? 113 : 84, height: selected ? 62 : 46)
+                        .shadow(color: .white.opacity(selected ? 0.4 : 0), radius: 10)
                 case .system:
                     XMBTile(size: selected ? 62 : 46)
                         .shadow(color: .white.opacity(selected ? 0.45 : 0), radius: 12)

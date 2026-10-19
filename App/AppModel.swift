@@ -186,33 +186,81 @@ final class AppModel: ObservableObject {
         session = .game(game, savestate: savestate)
     }
 
-    // MARK: Starting without precompilation
+    // MARK: Temporary settings (one session)
 
-    /// The key of RPCS3's "PPU/SPU LLVM Precompilation" setting, and where its previous value
-    /// is kept while a session runs without it (restored when it ends, or at the next launch).
-    private static let precompilationKey = "advanced.llvm_precompilation"
-    private static let restoreKey = "rpcs3.restorePrecompilation"
+    /// Settings changed for one session only, with their previous values, kept in the user
+    /// defaults until restored (when the session ends, or at the next launch after a crash).
+    private static let restoreKey = "rpcs3.restoreSettings"
+    private static let legacyRestoreKey = "rpcs3.restorePrecompilation"
 
-    /// Stops nothing itself: called once the stalled session has closed. Turns precompilation
-    /// off, then starts the same session again; RPCS3 then compiles SPU code as it runs instead
-    /// of building the whole cache first.
-    func retryWithoutPrecompilation(_ session: Session) {
-        Diagnostics.event("Redémarrage sans précompilation demandé")
-        Core.run({ () -> String in
-            let current = (try? Core.settings())?.first { $0.key == Self.precompilationKey }?.value ?? "true"
-            try Core.setSetting(Self.precompilationKey, "false")
-            return current
+    /// A setting to change for one session: its key, and how to pick the new value among the
+    /// core's options (option values are read at run time, not hard-coded).
+    struct Override {
+        let key: String
+        let pick: (Setting) -> String?
+    }
+
+    /// PPU/SPU precompilation off: RPCS3 compiles as it runs instead of building the cache first.
+    static let withoutPrecompilation = [Override(key: "advanced.llvm_precompilation") { _ in "false" }]
+
+    /// The XMB: the RSX FIFO behaves as in upstream RPCS3. This port's ARMSX3-style FIFO changes
+    /// (deferred GET publishing, 4 KiB read cache, event waits, parked DMA waits) are the first
+    /// suspects of the VSH freeze ("nv406e::semaphore_acquire has timed out" right after the RSX
+    /// context is set up).
+    static let xmbCompatibility: [Override] = [
+        Override(key: "experimental.deferred_get_publishing") { option($0, matching: ["disab", "désac", "off"]) },
+        Override(key: "experimental.fifo_cache_size") { option($0, matching: ["1 kib", "1kib", "1 kb", "1024", "original"]) },
+        Override(key: "experimental.fifo_idle_mode") { option($0, matching: ["yield", "céder"]) },
+        Override(key: "experimental.rsx_dma_wait_parking") { option($0, matching: ["disab", "désac", "off"]) },
+    ]
+
+    private static func option(_ setting: Setting, matching words: [String]) -> String? {
+        setting.options.first { option in
+            let text = (option.value + " " + option.label).lowercased()
+            return words.contains { text.contains($0) }
+        }?.value
+    }
+
+    /// Applies `overrides`, remembers the previous values, then starts `session`.
+    func start(_ session: Session, with overrides: [Override], reason: String) {
+        Core.run({ () -> [String: String] in
+            let settings = (try? Core.settings()) ?? []
+            var previous: [String: String] = [:]
+            var applied: [String] = []
+            for override in overrides {
+                guard let setting = settings.first(where: { $0.key == override.key }),
+                      let value = override.pick(setting), value != setting.value else { continue }
+                try Core.setSetting(override.key, value)
+                previous[override.key] = setting.value
+                applied.append("\(override.key) = \(value) (était \(setting.value))")
+            }
+            Diagnostics.event("\(reason) : " + (applied.isEmpty ? "rien à changer" : applied.joined(separator: " ; ")))
+            return previous
         }) { result in
             switch result {
             case let .success(previous):
-                if UserDefaults.standard.string(forKey: Self.restoreKey) == nil {
-                    UserDefaults.standard.set(previous, forKey: Self.restoreKey)
-                }
+                var saved = UserDefaults.standard.dictionary(forKey: Self.restoreKey) as? [String: String] ?? [:]
+                for (key, value) in previous where saved[key] == nil { saved[key] = value }
+                UserDefaults.standard.set(saved, forKey: Self.restoreKey)
                 self.pendingSession = session
                 self.launchPending()
             case let .failure(error):
                 self.message = error.localizedDescription
             }
+        }
+    }
+
+    /// Called once the stalled session has closed: the same session again, without precompilation.
+    func retryWithoutPrecompilation(_ session: Session) {
+        start(session, with: Self.withoutPrecompilation, reason: "Redémarrage sans précompilation")
+    }
+
+    /// The console's own menu, in XMB compatibility mode unless turned off.
+    func bootXMB() {
+        if UserDefaults.standard.object(forKey: "rpcs3.xmbCompat") as? Bool ?? true {
+            start(.xmb, with: Self.xmbCompatibility, reason: "Mode compatibilité XMB")
+        } else {
+            session = .xmb
         }
     }
 
@@ -228,11 +276,24 @@ final class AppModel: ObservableObject {
         session = next
     }
 
-    /// Puts the precompilation setting back as it was, if a session changed it.
+    /// Puts back every setting a session changed.
     func restorePrecompilationIfNeeded() {
-        guard let previous = UserDefaults.standard.string(forKey: Self.restoreKey) else { return }
-        Core.run({ try Core.setSetting(Self.precompilationKey, previous) }) { result in
-            if case .success = result { UserDefaults.standard.removeObject(forKey: Self.restoreKey) }
+        var saved = UserDefaults.standard.dictionary(forKey: Self.restoreKey) as? [String: String] ?? [:]
+        if let legacy = UserDefaults.standard.string(forKey: Self.legacyRestoreKey) {
+            saved["advanced.llvm_precompilation"] = saved["advanced.llvm_precompilation"] ?? legacy
+            UserDefaults.standard.removeObject(forKey: Self.legacyRestoreKey)
+        }
+        guard !saved.isEmpty else { return }
+        Core.run({ () -> [String] in
+            var restored: [String] = []
+            for (key, value) in saved where (try? Core.setSetting(key, value)) != nil { restored.append(key) }
+            Diagnostics.event("Réglages rétablis : \(restored.joined(separator: ", "))")
+            return restored
+        }) { result in
+            guard case let .success(restored) = result else { return }
+            var left = UserDefaults.standard.dictionary(forKey: Self.restoreKey) as? [String: String] ?? [:]
+            for key in restored { left.removeValue(forKey: key) }
+            if left.isEmpty { UserDefaults.standard.removeObject(forKey: Self.restoreKey) } else { UserDefaults.standard.set(left, forKey: Self.restoreKey) }
         }
     }
 
