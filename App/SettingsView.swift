@@ -16,6 +16,9 @@ final class SettingsModel: ObservableObject {
     @Published var custom = false
     @Published var loading = true
     @Published var error: String?
+    /// A change is on its way to the core: further taps wait for it (the list then shows the
+    /// value the core actually kept).
+    @Published private(set) var busy = false
 
     init(_ scope: SettingsScope) { self.scope = scope }
 
@@ -43,16 +46,44 @@ final class SettingsModel: ObservableObject {
     }
 
     func set(_ setting: Setting, _ value: String) {
-        guard value != setting.value else { return }
+        guard value != setting.value, !busy else { return }
+        busy = true
+        error = nil
+        Diagnostics.event("Modification demandée : \(setting.key) = \(value)")
         let scope = scope
         Core.run({
-            switch scope {
-            case .global: try Core.setSetting(setting.key, value)
-            case let .game(g): try Core.setGameSetting(g.titleID, setting.key, value)
+            func apply() throws {
+                switch scope {
+                case .global: try Core.setSetting(setting.key, value)
+                case let .game(g): try Core.setGameSetting(g.titleID, setting.key, value)
+                }
+            }
+            do {
+                try apply()
+            } catch let error as CoreError where error.code == RPCS3_IOS_INVALID_STATE {
+                // Settings only change with emulation stopped. No game is on screen here (the
+                // settings are reached from the home screen), so what is left is a session that
+                // didn't fully end: stop it, then try once more.
+                let state = Core.emulationState
+                guard state != RPCS3_IOS_EMULATION_STATE_RUNNING, state != RPCS3_IOS_EMULATION_STATE_PAUSED else { throw error }
+                Diagnostics.event("Réglage refusé (état \(state.rawValue)) : arrêt de l'émulation restante, puis nouvel essai")
+                try? Core.stop()
+                try apply()
             }
         }) { result in
-            if case let .failure(e) = result { self.error = e.localizedDescription }
+            let target: String
+            switch scope {
+            case .global: target = "global"
+            case let .game(g): target = g.titleID
+            }
+            switch result {
+            case .success: Diagnostics.event("Réglage \(target) : \(setting.key) = \(value) (était \(setting.value))")
+            case let .failure(e):
+                Diagnostics.event("Réglage \(target) : \(setting.key) = \(value) refusé : \(e.localizedDescription)")
+                self.error = e.localizedDescription
+            }
             // Some settings change what others allow: reload all of them.
+            self.busy = false
             self.load()
         }
     }
@@ -91,6 +122,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            SettingsErrorBanner(model: model)
             if model.loading {
                 HStack { Spacer(); ProgressView("Chargement des réglages…"); Spacer() }
             }
@@ -139,11 +171,6 @@ struct SettingsView: View {
         } message: {
             Text("RPCS3 utilisera les réglages globaux au prochain lancement.")
         }
-        .alert("Réglages", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(model.error ?? "")
-        }
     }
 
     private var title: String {
@@ -163,6 +190,7 @@ private struct SettingsCategoryView: View {
         var sections: [String] = []
         for s in settings where !sections.contains(s.section) { sections.append(s.section) }
         return List {
+            SettingsErrorBanner(model: model)
             ForEach(sections, id: \.self) { section in
                 Section(SettingNames.section(section)) {
                     ForEach(settings.filter { $0.section == section }) { SettingRow(setting: $0, model: model) }
@@ -257,6 +285,25 @@ private struct SettingRow: View {
                     Text(name)
                     Spacer()
                     Text(format(current)).monospacedDigit().foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+}
+
+/// A refused change, shown at the top of the list that is on screen. (An alert attached to the
+/// settings root while a category page was pushed over it could lock the whole interface.)
+private struct SettingsErrorBanner: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        if let error = model.error {
+            Section {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                    Text(error).font(.callout)
+                    Spacer()
+                    Button("OK") { model.error = nil }.buttonStyle(.borderless)
                 }
             }
         }

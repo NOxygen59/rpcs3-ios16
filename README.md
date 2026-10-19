@@ -30,6 +30,7 @@ Numérotation propre, « RPCS3 iOS 16 », en parallèle des releases officielles
 
 | RPCS3 iOS 16 | Basé sur RPCS3 iOS (XITRIX) | Release | Contenu |
 |---|---|---|---|
+| 1.5 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.5](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.5) | Correctif du gel dans les réglages d'un jeu ; réessai automatique quand le moteur refuse un réglage ; détecteur d'interface bloquée dans le diagnostic |
 | 1.4 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.4](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.4) | Catégories Utilisateurs, PlayStation Network et Amis ; icônes façon PS3 ; vraies transitions gauche/droite (doigt, trackpad, manette) ; mode compatibilité XMB ; journal de diagnostic allégé |
 | 1.3 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.3](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.3) | Dossier RPCS3 dans Fichiers ; protocole de diagnostic ; nouveau menu en jeu (au doigt et à la manette) ; manette tactile masquée avec une manette, plus petite et réglable ; transitions plus fluides |
 | 1.2 | 0.11 (cœur ABI 30, `af64aca`) | [v0.11.1-ios16.2](https://github.com/NOxygen59/rpcs3-ios16/releases/tag/v0.11.1-ios16.2) | Tuile « PlayStation 3 — XMB » dans la liste des jeux ; écran de chargement avec chrono et journal en direct ; « Redémarrer sans précompilation » si rien ne bouge pendant 2 minutes |

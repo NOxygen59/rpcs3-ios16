@@ -312,7 +312,7 @@ struct XMBView: View {
                 ForEach(Array(cat.items.enumerated()), id: \.element.id) { index, item in
                     let isSelected = index == sel
                     let below = barY + 92 + CGFloat(index - sel) * rowHeight
-                    let above = barY - 62 - CGFloat(sel - 1 - index) * rowHeight
+                    let above = barY - 86 - CGFloat(sel - 1 - index) * rowHeight
                     let y = (index >= sel ? below : above) + (abs(drag.height) > abs(drag.width) ? drag.height : 0)
                     if y > -rowHeight, y < geo.size.height + rowHeight {
                     XMBRow(item: item, selected: isSelected, onOptions: item.options ?? item.game.map { game in { sheet = .game(game) } })

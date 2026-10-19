@@ -44,6 +44,43 @@ enum Diagnostics {
         if previousSessionEndedAbnormally {
             write("!!! La session précédente ne s'est pas terminée normalement (plantage, blocage ou fermeture forcée).")
         }
+        startHangDetector()
+    }
+
+    // MARK: Frozen interface
+
+    private static var hangTimer: DispatchSourceTimer?
+    private static var lastMainReply = Date()
+    private static var reportedHang = false
+    /// The last thing the app did, written with a frozen-interface report.
+    static var lastAction = "lancement"
+
+    /// Once a second, asks the main thread to answer. Three seconds without an answer is a
+    /// frozen interface: noted at once (iOS kills a frozen app after about ten seconds, which
+    /// leaves no other trace), then again when it comes back.
+    private static func startHangDetector() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1, leeway: .milliseconds(200))
+        timer.setEventHandler {
+            let silent = Date().timeIntervalSince(lastMainReply)
+            if silent > 3, !reportedHang {
+                reportedHang = true
+                pending.append(Data("\(timeOnly()) [app] !!! Interface bloquée depuis \(Int(silent)) s (dernière action : \(lastAction))\n".utf8))
+                flushNow()
+            }
+            DispatchQueue.main.async {
+                let now = Date()
+                queue.async {
+                    if reportedHang {
+                        reportedHang = false
+                        pending.append(Data("\(timeOnly()) [app] Interface débloquée après \(Int(now.timeIntervalSince(lastMainReply))) s\n".utf8))
+                    }
+                    lastMainReply = now
+                }
+            }
+        }
+        timer.resume()
+        hangTimer = timer
     }
 
     /// The app is going away normally (sent to the background, which iOS may turn into a quit).
@@ -70,6 +107,7 @@ enum Diagnostics {
     /// Something the app itself did (session started, stall detected, setting changed…).
     static func event(_ text: String) {
         write("[app] \(text)")
+        queue.async { lastAction = text }
     }
 
     /// RPCS3 levels: 0 always, 1 fatal, 2 error, 3 todo, 4 success, 5 warning, 6 notice, 7 trace.
